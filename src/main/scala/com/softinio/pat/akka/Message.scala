@@ -23,6 +23,9 @@ final case class Message(
 final case class SubscribedMessage(subscriberId: Long, from: ActorRef[Message])
 
 sealed trait Command
-final case object Add extends Command
-final case object Remove extends Command
-final case object Get extends Command
+
+case object Add extends Command
+
+case object Remove extends Command
+
+case object Get extends Command

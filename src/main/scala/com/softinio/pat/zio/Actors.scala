@@ -1,85 +1,78 @@
 package com.softinio.pat.zio
 
 import zio.actors.Actor.Stateful
-import zio.actors._
-import zio.{ExitCode, IO, RIO, ZIO}
-import zio.console._
-import zio.duration.Duration
+import zio.actors.{ActorSystem, Context, Supervisor}
+import zio.{RIO, ZIO, ZIOAppDefault,Console, Duration}
 
-object Actors extends zio.App {
+object Actors extends ZIOAppDefault {
 
-  def run(args: List[String]) =
-    program.fold(_ => ExitCode.failure, _ => ExitCode.success)
+  def run: ZIO[Any, Throwable, Unit] = program
 
-  val subscriber = new Stateful[Console, Unit, Protocol] {
+  val subscriber: Stateful[Any, Unit, Protocol] = new Stateful[Any,Unit, Protocol] {
     override def receive[A](
         state: Unit,
         protocol: Protocol[A],
         context: Context
-    ): RIO[Console, (Unit, A)] =
+    ): RIO[Any, (Unit, A)] =
       protocol match {
         case message: Message =>
           for {
-            _ <- putStrLn(
+            _ <- Console.printLine(
               s"Validating ${message.firstName} ${message.lastName} with email ${message.emailAddress}!"
             )
             valid <- message.isValid
             self <- context.self[Protocol]
             _ <- message.replyTo ! SubscribedMessage(1L, self)
-            if (valid)
-            _ <- message.db ! message
-            if (valid)
-          } yield ((), ())
-        case _ => IO.fail(InvalidEmailException("Failed"))
+            _ <- ZIO.when(valid)(message.db ! message).map(_.getOrElse(()))
+          } yield ((), ().asInstanceOf[A])
+        case _ => ZIO.fail(InvalidEmailException("Failed"))
       }
   }
 
-  val datastore = new Stateful[Console, Unit, Protocol] {
+  val datastore: Stateful[Any, Unit, Protocol] = new Stateful[Any, Unit, Protocol] {
     override def receive[A](
         state: Unit,
         protocol: Protocol[A],
         context: Context
-    ): RIO[Console, (Unit, A)] =
+    ): RIO[Any, (Unit, A)] =
       protocol match {
         case message: Message =>
           for {
-            _ <- putStrLn(s"Processing Command")
+            _ <- Console.printLine(s"Processing Command")
             _ <- message.command match {
               case Add =>
-                putStrLn(s"Adding message with email: ${message.emailAddress}")
+                Console.printLine(s"Adding message with email: ${message.emailAddress}")
               case Remove =>
-                putStrLn(
-                  s"Removing message with email: ${message.emailAddress}"
-                )
+                Console.printLine(s"Removing message with email: ${message.emailAddress}")
               case Get =>
-                putStrLn(s"Getting message with email: ${message.emailAddress}")
+                Console.printLine(s"Getting message with email: ${message.emailAddress}")
             }
-          } yield ((), ())
-        case _ => IO.fail(InvalidEmailException("Failed"))
+          } yield ((), ().asInstanceOf[A])
+        case _ => ZIO.fail(InvalidEmailException("Failed"))
       }
   }
 
-  val reply = new Stateful[Console, Unit, Protocol] {
+  val reply: Stateful[Any, Unit, Protocol] = new Stateful[Any, Unit, Protocol] {
     override def receive[A](
         state: Unit,
         protocol: Protocol[A],
         context: Context
-    ): RIO[Console, (Unit, A)] =
+    ): RIO[Any, (Unit, A)] =
       protocol match {
         case message: SubscribedMessage =>
           for {
-            _ <- putStrLn(s"Got Reply: ${message.subscriberId}")
-          } yield ((), ())
-        case _ => IO.fail(InvalidEmailException("Failed"))
+            _ <- Console.printLine(s"Got Reply: ${message.subscriberId}")
+          } yield ((), ().asInstanceOf[A])
+        case _ => ZIO.fail(InvalidEmailException("Failed"))
       }
   }
 
-  val program = for {
+  val program: ZIO[Any, Throwable, Unit] = for {
     actorSystemRoot <- ActorSystem("salarTestActorSystem")
-    subscriberActor <-
-      actorSystemRoot.make("subscriberActor", Supervisor.none, (), subscriber)
-    datastoreActor <-
-      actorSystemRoot.make("datastoreActor", Supervisor.none, (), datastore)
+    subscriberActor <- actorSystemRoot.make("subscriberActor", Supervisor.none, (), subscriber)
+    //zio://salarTestActorSystem@0.0.0.0:0000/subscriberActor
+    _ <- ZIO.logInfo(s"subscriberActor.path=${subscriberActor.path}")
+    datastoreActor <- actorSystemRoot.make("datastoreActor", Supervisor.none, (), datastore)
     replyActor <- actorSystemRoot.make("replyActor", Supervisor.none, (), reply)
     _ <- subscriberActor ! Message(
       "Salar",
@@ -89,6 +82,6 @@ object Actors extends zio.App {
       datastoreActor,
       replyActor
     )
-    _ <- zio.clock.sleep(Duration.Infinity)
+    _ <- zio.Clock.sleep(Duration.Infinity)
   } yield ()
 }

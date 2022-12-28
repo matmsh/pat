@@ -2,7 +2,8 @@ package com.softinio.pat.zio
 
 import zio.actors.ActorRef
 import org.apache.commons.validator.routines.EmailValidator
-import zio.UIO
+import zio.{UIO, ZIO}
+
 
 sealed trait Protocol[+A]
 final case class Customer(
@@ -19,14 +20,17 @@ final case class Message(
     replyTo: ActorRef[Protocol]
 ) extends Protocol[Unit] {
   def isValid: UIO[Boolean] =
-    UIO(EmailValidator.getInstance().isValid(emailAddress))
+    ZIO.attempt(EmailValidator.getInstance().isValid(emailAddress)).orDie
 }
 final case class SubscribedMessage(subscriberId: Long, from: ActorRef[Protocol])
     extends Protocol[Unit]
 
 sealed trait Command
-final case object Add extends Command
-final case object Remove extends Command
-final case object Get extends Command
+
+case object Add extends Command
+
+case object Remove extends Command
+
+case object Get extends Command
 
 case class InvalidEmailException(msg: String) extends Throwable
